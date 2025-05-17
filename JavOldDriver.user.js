@@ -698,6 +698,8 @@
         static addAvImg(avid, func, isZoom) {
             let p = Common.getBigPreviewImgUrlFromBlogjav(avid);
             let p2 = Common.getBigPreviewImgUrlFromJavStore(avid);
+            let p3 = Common.getBigPreviewImgUrlFromJavStoreImg(avid);
+
             p.then(imgUrl => {
 
                 if (!imgUrl || imgUrl === null) {
@@ -723,18 +725,22 @@
                     addJavArchiveImg.call(this);
                 });
 
-                function addJavArchiveImg() {
-                    p2.then(url => {
+                function addJavArchiveImg(task = p2) {
+                    task.then((url) => {
                         imgUrl = GM_getValue(`temp_img_url_${avid}`, "");
                         if (imgUrl === "") {
-                            console.log(`${avid} 没有找到预览图`);
-                            addImg(EMPTY_IMAGE_DATA, func, false);
+                            if (task === p3) {
+                                console.log(`${avid} 没有找到预览图`);
+                                addImg(EMPTY_IMAGE_DATA, func, false);
+                            } else {
+                                addJavArchiveImg(p3);
+                            }
                         } else {
                             GM_deleteValue(`temp_img_url_${avid}`);
                             addImg(imgUrl, func, isZoom);
                         }
                     });
-                }
+                  }
 
                 function addImg(targetImgUrl, func, isZoom) {
                     console.log("显示的图片地址:" + targetImgUrl);
@@ -879,6 +885,42 @@
                 }
             });
         }
+
+        /**
+         * 根据番号从img.javstore.net获取大预览图Url，并且缓存到GM中
+         * @param {string} avid av唯一码
+         */
+        static getBigPreviewImgUrlFromJavStoreImg(avid) {
+            //异步请求搜索JavStore的番号
+            GM_setValue(`temp_img_url_${avid}`, "");
+            return Common.request(`https://img.javstore.net/me/search/?q=${avid}`).then((result) => {
+                if (!result.loadstuts) return;
+                let doc = Common.parsetext(result.responseText);
+                let img_array = $(doc).find(".image-container img");
+                if (img_array.length > 0) {
+                    const lowcaseAvid = avid.toLowerCase();
+                    const imgUrlAry = []
+                    for (let i = 0; i < img_array.length; i++) {
+                        const imgSrc = img_array[i].src.replace(".md", "");
+                        const lowcaseImgUrl = imgSrc.toLowerCase();
+                        if(lowcaseImgUrl.includes(lowcaseAvid)) imgUrlAry.push(imgSrc);
+                    }
+                    if (imgUrlAry.length) {
+                        const imgSrc = imgUrlAry.find(item=>item.includes('1080')) || imgUrlAry[0];
+                        console.log('javstore获取的图片地址:' + imgSrc);
+                        GM_setValue(`temp_img_url_${avid}`, imgSrc);
+                        return Promise.resolve(imgSrc);
+                    } else {
+                        console.log("javstore获取的图片地址已经被移除或加载失败");
+                        return Promise.resolve();
+                    }
+                } else {
+                    console.log("javstore获取的图片地址已经被移除或加载失败");
+                    return Promise.resolve();
+                }
+            });
+        }
+        
         /**
          *
          * @param {string} key
